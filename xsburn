@@ -1,2 +1,42 @@
 #!/bin/sh
 # Copyright 2019, Development Gateway. See LICENSE.
+confirm() {
+  read -p "${1}? [Y/n] "
+  if [ '!' '(' "$REPLY" = "y" -o "$REPLY" = "Y" -o -z "$REPLY" ')' ]; then
+    echo Exiting. >&2
+    exit 2
+  fi
+}
+
+if [ -z "$1" ]; then
+  echo "Usage: $0 VM_NAME_LABEL" >&2
+  exit 1
+fi
+
+VM_UUID="$(xe vm-list --minimal power-state=running name-label="$1")"
+if [ -z "$VM_UUID" ]; then
+  echo "$1 is not running" >&2
+  exit 1
+fi
+
+confirm "Shut down VM '$1'" \
+  && xe vm-shutdown force=true uuid="$VM_UUID"
+
+VDIS="$(xe vbd-list --minimal vm-uuid="$VM_UUID" \
+  | tr -d '\n' \
+  | xargs -d, -I@ xe vdi-list --minimal vbd-uuids:contains=@)"
+
+confirm "Uninstall VM '$1' ($VM_UUID)" \
+  && xe vm-uninstall force=true uuid="$VM_UUID"
+
+for VDI_UUID in $VDIS; do
+  if [ -z "$(xe vdi-list --minimal uuid="$VDI_UUID")" ]; then
+    echo "VDI $VDI_UUID already deleted" >&2
+  else
+    VDI_LABEL="$(xe vdi-param-get uuid="$VDI_UUID" param-name=name-label)"
+    VDI_SIZE="$(xe vdi-param-get uuid="$VDI_UUID" param-name=virtual-size)"
+    VDI_SIZE_GB="$(echo "$VDI_SIZE / 1024 / 1024 / 1024" | bc) GB"
+    confirm "Destroy VDI '$VDI_LABEL' ($VDI_SIZE_GB)" \
+      && xe vdi-destroy uuid="$VDI_UUID"
+  fi
+done
