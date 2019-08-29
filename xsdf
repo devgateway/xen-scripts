@@ -1,2 +1,23 @@
 #!/bin/sh
 # Copyright 2019, Development Gateway. See LICENSE.
+xe sr-list type=lvmohba --minimal \
+  | tr -d \\n \
+  | xargs -d , -I@ xe sr-list uuid=@ params=physical-size,physical-utilisation,name-label,name-description,uuid \
+  | sed '/^$/d; s/^[[:space:]]\+//; s/[[:space:]]\+( R[WO])[[:space:]]*:[[:space:]]\+/\t/' \
+  | awk -F $'\t' '
+BEGIN {
+  i = 0;
+  printf "%6s %6s %-10s %-36s %s\n", "Free", "Size", "Label", "UUID", "Description"
+}
+{
+  if ($1 == "uuid") id = $2;
+  if ($1 == "name-label") nl = $2;
+  if ($1 == "name-description") nd = $2;
+  if ($1 == "physical-utilisation") pu = $2;
+  if ($1 == "physical-size") ps = $2;
+  i++;
+  if (i == 5) {
+    i = 0;
+    printf "%6i %6i %-10.10s %36.36s %-38.38s\n", (ps - pu) / (1024 * 1024 * 1024), ps / (1024 * 1024 * 1024), nl, id, nd
+  }
+}'
