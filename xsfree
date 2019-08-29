@@ -1,2 +1,25 @@
 #!/bin/sh
 # Copyright 2019, Development Gateway. See LICENSE.
+FORMAT_ROW='
+function format_gb(num) {
+  return int(num / 1024 ^ 3);
+}
+
+function usage(free, total) {
+  return sprintf("%i%%", int((1 - free / total) * 100));
+}
+
+/^[[:space:]]*name-label\>/ { label = $2 }
+/^[[:space:]]*memory-total\>/ { total = $2 }
+/^[[:space:]]*memory-free\>/ { free = $2 }
+END {
+  OFS = "\t";
+  print label, format_gb(total), format_gb(free), usage(free, total);
+}
+'
+
+echo Host Total Free Usage | tr ' ' '\t'
+xe host-list --minimal | tr -d '\n' | xargs -d ',' -n 1 | while read HOST_UUID; do
+  xe host-list uuid="$HOST_UUID" params=name-label,memory-total,memory-free \
+    | awk -F ':[[:space:]]+' "$FORMAT_ROW"
+done | sort -k 1
