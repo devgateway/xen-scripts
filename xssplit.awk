@@ -25,7 +25,7 @@ BEGIN {
     flush();
   } else {
     gsub(" +", "", $1);
-    current_object[$1] = $2
+    current_object[$1] = (unit && typeof($2) != "string") ? int($2 / unit) : $2;
     need_flush = 1;
   }
 }
