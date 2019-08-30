@@ -1,25 +1,55 @@
 #!/bin/sh
 # Copyright 2019, Development Gateway. See LICENSE.
-FORMAT_ROW='
-function format_gb(num) {
-  return int(num / 1024 ^ 3);
+
+UNIT=$((1024 ** 3))
+: ${SR_TYPE:=lvmohba}
+TRANSPOSE_ROWS='
+function flush() {
+  if (!need_flush) return;
+
+  output_line = "";
+
+  for (i = 1; i <= num_fields; i++) {
+    separator = (i > 1) ? OFS : "";
+    output_line = output_line separator current_object[field_names[i]];
+  }
+
+  print output_line;
+  need_flush = 0;
 }
 
-function usage(free, total) {
-  return sprintf("%i%%", int((1 - free / total) * 100));
+BEGIN {
+  FS=" +[(][ [:upper:]]+[)]( *): ";
+  OFS="\t";
+  need_flush = 0;
+  num_fields = split(fields, field_names, ",");
 }
 
-/^[[:space:]]*name-label\>/ { label = $2 }
-/^[[:space:]]*memory-total\>/ { total = $2 }
-/^[[:space:]]*memory-free\>/ { free = $2 }
+{
+  if (NF == 0) {
+    flush();
+  } else {
+    gsub(" +", "", $1);
+    current_object[$1] = (unit && $2 ~ "^[[:digit:]]+$") ? int($2 / unit) : $2;
+    need_flush = 1;
+  }
+}
+
 END {
-  OFS = "\t";
-  print label, format_gb(total), format_gb(free), usage(free, total);
+  flush();
 }
 '
 
-echo Host Total Free Usage | tr ' ' '\t'
-xe host-list --minimal | tr -d '\n' | xargs -d ',' -n 1 | while read HOST_UUID; do
-  xe host-list uuid="$HOST_UUID" params=name-label,memory-total,memory-free \
-    | awk -F ':[[:space:]]+' "$FORMAT_ROW"
-done | sort -k 1
+xe_status() {
+  PARAMS="$1"
+  shift
+  {
+    echo "$PARAMS" | tr ',' '\t'
+    xe $@ params="$PARAMS" \
+      | awk -v fields="$PARAMS" -v unit=$UNIT "$TRANSPOSE_ROWS" \
+      | sort -k 1
+  } | column -ts $'\t'
+}
+
+xe_status name-label,memory-total,memory-free host-list
+xe_status name-label,physical-size,physical-utilisation sr-list type=$SR_TYPE
