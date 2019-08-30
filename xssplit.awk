@@ -1,24 +1,38 @@
 #!/usr/bin/awk -f
+function flush() {
+  if (!need_flush) return;
+
+  output_line = "";
+
+  indexes[1] = 1;
+  asorti(fields, indexes);
+
+  for (n in indexes) {
+    separator = (n > 1) ? OFS : "";
+    output_line = output_line separator fields[indexes[n]];
+  }
+
+  print output_line;
+  need_flush = 0;
+}
+
 BEGIN {
-  FS="(^ *)|( [(][ [:upper:]]+[)]: )";
+  FS=" +[(][ [:upper:]]+[)]( *): ";
   OFS="\t";
-  split(fields, field_names, ",");
+  need_flush = 0;
+  gibibyte = 1024 ^ 3;
 }
 
 {
-  for (key in field_names) {
-    if ($2 == field_names[key]) {
-      current_object[field_names[key]] = $3;
-    }
+  if (NF == 0) {
+    flush();
+  } else {
+    gsub(" +", "", $1);
+    fields[$1] = $2
+    need_flush = 1;
   }
 }
 
 END {
-  for (key in field_names) {
-    if (key > 1) {
-      output_line = output_line OFS;
-    }
-    output_line = output_line current_object[field_names[key]];
-  }
-  print output_line
+  flush();
 }
