@@ -1,20 +1,18 @@
 #!/bin/sh
 # Copyright 2019, Development Gateway. See LICENSE.
 
-UNIT=$((1024 ** 3))
-: ${SR_TYPE:=lvmohba}
 TRANSPOSE_ROWS='
 function flush() {
   if (!need_flush) return;
 
-  output_line = "";
+  name  = this[fields[1]];
+  whole = int(this[fields[2]] / 1024 ^ 3);
+  part  = int(this[fields[3]] / 1024 ^ 3);
+  free  = part_is_free ? part : whole - part;
+  usage = int(100 * (1 - free / whole));
 
-  for (i = 1; i <= num_fields; i++) {
-    separator = (i > 1) ? OFS : "";
-    output_line = output_line separator current_object[field_names[i]];
-  }
+  print name, whole, free, usage "%";
 
-  print output_line;
   need_flush = 0;
 }
 
@@ -22,7 +20,7 @@ BEGIN {
   FS=" +[(][ [:upper:]]+[)]( *): ";
   OFS="\t";
   need_flush = 0;
-  num_fields = split(fields, field_names, ",");
+  split(field_names, fields, ",");
 }
 
 {
@@ -30,7 +28,7 @@ BEGIN {
     flush();
   } else {
     gsub(" +", "", $1);
-    current_object[$1] = (unit && $2 ~ "^[[:digit:]]+$") ? int($2 / unit) : $2;
+    this[$1] = $2;
     need_flush = 1;
   }
 }
@@ -39,17 +37,25 @@ END {
   flush();
 }
 '
+: ${SR_TYPE:=lvmohba}
 
 xe_status() {
-  PARAMS="$1"
-  shift
+  OBJECT="$1"
+  IS_FREE="$2"
+  PARAMS="$3"
+  shift 3
   {
-    echo "$PARAMS" | tr ',' '\t'
-    xe $@ params="$PARAMS" \
-      | awk -v fields="$PARAMS" -v unit=$UNIT "$TRANSPOSE_ROWS" \
+    echo -e "Name\tTotal\tFree\tUsage"
+    xe $OBJECT-list params="$PARAMS" $@ \
+      | awk -v field_names="$PARAMS" -v part_is_free=$IS_FREE "$TRANSPOSE_ROWS" \
       | sort -k 1
   } | column -ts $'\t'
 }
 
-xe_status name-label,memory-total,memory-free host-list
-xe_status name-label,physical-size,physical-utilisation sr-list type=$SR_TYPE
+echo "Memory, GB"
+xe_status host 1 name-label,memory-total,memory-free
+
+echo
+
+echo "Storage ($SR_TYPE), GB"
+xe_status sr   0 name-label,physical-size,physical-utilisation type=$SR_TYPE
