@@ -4,12 +4,9 @@ function flush() {
 
   output_line = "";
 
-  indexes[1] = 1;
-  asorti(fields, indexes);
-
-  for (n in indexes) {
-    separator = (n > 1) ? OFS : "";
-    output_line = output_line separator fields[indexes[n]];
+  for (i in indexes) {
+    separator = (i > 1) ? OFS : "";
+    output_line = output_line separator current_object[indexes[i]];
   }
 
   print output_line;
@@ -20,7 +17,7 @@ BEGIN {
   FS=" +[(][ [:upper:]]+[)]( *): ";
   OFS="\t";
   need_flush = 0;
-  gibibyte = 1024 ^ 3;
+  split(fields, indexes, ",");
 }
 
 {
@@ -28,7 +25,7 @@ BEGIN {
     flush();
   } else {
     gsub(" +", "", $1);
-    fields[$1] = $2
+    current_object[$1] = $2
     need_flush = 1;
   }
 }
